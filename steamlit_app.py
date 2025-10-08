@@ -224,7 +224,7 @@ if start_manual_clicked and name.strip():
         st.rerun()
 
 # -----------------------------
-# Current Golfers (no-flash live timers; Date hidden)
+# Current Golfers (no-flash live timers; Date hidden; white text)
 # -----------------------------
 st.subheader("Current Golfers on Course")
 
@@ -240,9 +240,9 @@ else:
         rows_html.append(f"""
           <tr>
             <td>{r['Name']}</td>
-            <td style="text-align:center">{r['Group Size']}</td>
-            <td style="text-align:center">{r['Transport']}</td>
-            <td style="text-align:center">{(st_dt.strftime('%I:%M %p') if isinstance(st_dt, datetime) else r['Start Time'])}</td>
+            <td class="center">{r['Group Size']}</td>
+            <td class="center">{r['Transport']}</td>
+            <td class="center">{(st_dt.strftime('%I:%M %p') if isinstance(st_dt, datetime) else r['Start Time'])}</td>
             <td class="elapsed" data-start="{start_ts}">--:--:--</td>
           </tr>
         """)
@@ -250,20 +250,20 @@ else:
     rows_html_str = "\n".join(rows_html)
 
     # Plain triple-quoted string (NOT an f-string) so JS braces don't need escaping
-html = """
+    html = """
 <style>
   .golf-wrap{
     overflow:auto; border:1px solid #333; border-radius:12px; padding:8px;
-    background:#111;   /* dark backdrop so white text is readable */
+    background:#111;
   }
   .golf-table{
     width:100%; border-collapse:collapse;
     font-family:system-ui, -apple-system, Segoe UI, Roboto; font-size:0.95rem;
-    color:#fff;    /* <-- make all text white */
+    color:#fff;
   }
   .golf-table th, .golf-table td{
-    color:#fff;                     /* headers + cells white */
-    border-bottom:1px solid #333;   /* subtle separator */
+    color:#fff;
+    border-bottom:1px solid #333;
     padding:8px 6px;
   }
   .golf-table th{ text-align:left; }
@@ -305,12 +305,13 @@ html = """
   tick();
   setInterval(tick, 1000);
 </script>
-    """
+"""
 
+    # Inject the table rows and render
     html = html.replace("{{ROWS}}", rows_html_str)
     components.html(html, height=min(420, 140 + 40*len(rows_html)))
 
-    # Manual refresh to pull new rows from other devices (no page flash)
+    # Optional manual refresh to pull new rows from other devices
     if st.button("🔃 Refresh data"):
         st.rerun()
 
@@ -382,25 +383,6 @@ with colA:
     if st.button("📜 Today’s History" + (" (hide)" if st.session_state.show_history else "")):
         st.session_state.show_history = not st.session_state.show_history
 
-def read_records_today_df():
-    recs = ws_records.get_all_records()
-    df = pd.DataFrame(recs, columns=RECORD_COLS) if recs else pd.DataFrame(columns=RECORD_COLS)
-    if df.empty:
-        return df
-    df["Group Size"] = pd.to_numeric(df["Group Size"], errors="coerce").fillna(1).astype(int)
-    df["Start Time (dt)"] = df["Start Time"].apply(parse_iso)
-    df["End Time (dt)"] = df["End Time"].apply(parse_iso)
-    today_str = date.today().isoformat()
-    df = df[df["Date"].astype(str) == today_str].copy()
-    # compute Total Elapsed if missing
-    def _compute(row):
-        if pd.notna(row["Start Time (dt)"]) and pd.notna(row["End Time (dt)"]):
-            secs = int((row["End Time (dt)"] - row["Start Time (dt)"]).total_seconds())
-            return fmt_hms(secs)
-        return row.get("Total Elapsed", "")
-    df["Total Elapsed"] = df.apply(_compute, axis=1)
-    return df
-
 if st.session_state.show_history:
     st.subheader(f"History — {date.today().isoformat()}")
     today_df = read_records_today_df()
@@ -427,4 +409,3 @@ if st.session_state.show_history:
 # -----------------------------
 st.markdown("---")
 st.caption("Golf Tracker · Google Sheets (Active & Records) · No-flash timers · 12-hour Manual time (5-min steps)")
-
