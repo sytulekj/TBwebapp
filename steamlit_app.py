@@ -3,7 +3,8 @@ import pandas as pd
 from datetime import datetime, date, time as dtime
 import gspread
 from google.oauth2.service_account import Credentials
-import streamlit.components.v1 as components  # for smooth client-side timer
+import streamlit.components.v1 as components  # for no-flash live timer table
+import re
 
 # =============================
 # App Config
@@ -24,8 +25,6 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
 client = gspread.authorize(creds)
 
-# Prefer key extraction for reliability
-import re
 def extract_sheet_id(url: str):
     m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
     return m.group(1) if m else None
@@ -34,6 +33,7 @@ sheet_id = extract_sheet_id(SHEET_URL)
 if not sheet_id:
     st.error("Invalid Google Sheet URL in secrets. Expected: https://docs.google.com/spreadsheets/d/<ID>/edit")
     st.stop()
+
 ss = client.open_by_key(sheet_id)
 
 # Columns (Date stored in sheets but not shown in Active UI)
@@ -41,7 +41,7 @@ ACTIVE_COLS  = ["Date", "Name", "Group Size", "Transport", "Start Time"]
 RECORD_COLS  = ["Date", "Name", "Group Size", "Transport", "Start Time", "End Time", "Total Elapsed"]
 
 def col_range(cols: int) -> str:
-    # A..Z is plenty for our columns
+    # A..Z is enough for our columns
     return f"A1:{chr(64 + cols)}1"
 
 def get_or_create_ws(name: str, columns: list[str]):
@@ -247,7 +247,10 @@ else:
           </tr>
         """)
 
-    html = f"""
+    rows_html_str = "\n".join(rows_html)
+
+    # Plain triple-quoted string (NOT an f-string) so JS braces don't need escaping
+    html = """
     <div style="overflow:auto; border:1px solid #eee; border-radius:12px; padding:8px">
       <table style="width:100%; border-collapse:collapse; font-family:system-ui, -apple-system, Segoe UI, Roboto; font-size:0.95rem;">
         <thead>
@@ -260,27 +263,34 @@ else:
           </tr>
         </thead>
         <tbody>
-          {''.join(rows_html)}
+          {{ROWS}}
         </tbody>
       </table>
     </div>
     <script>
-      function pad(n){{return n<10?('0'+n):n}}
-      function fmt(s){{var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;return pad(h)+':'+pad(m)+':'+pad(x)}}
-      function tick(){{
-        const now = Math.floor(Date.now()/1000);
-        document.querySelectorAll('.elapsed').forEach((td)=>{
-          const start = parseInt(td.dataset.start || now);
+      function pad(n){ return n < 10 ? ('0' + n) : n; }
+      function fmt(s){
+        var h = Math.floor(s/3600),
+            m = Math.floor((s%3600)/60),
+            x = s % 60;
+        return pad(h) + ':' + pad(m) + ':' + pad(x);
+      }
+      function tick(){
+        var now = Math.floor(Date.now()/1000);
+        document.querySelectorAll('.elapsed').forEach(function(td){
+          var start = parseInt(td.dataset.start || now);
           td.textContent = fmt(Math.max(0, now - start));
         });
-      }}
+      }
       tick();
       setInterval(tick, 1000);
     </script>
     """
+
+    html = html.replace("{{ROWS}}", rows_html_str)
     components.html(html, height=min(420, 140 + 40*len(rows_html)))
 
-    # Manual refresh to pull new rows from other devices (no full auto-rerun)
+    # Manual refresh to pull new rows from other devices (no page flash)
     if st.button("🔃 Refresh data"):
         st.rerun()
 
@@ -327,7 +337,6 @@ if not df_active_for_end.empty:
             if mode_end != "Manual time":
                 st.warning("Choose ‘Manual time’ to set hour/minute first.")
                 st.stop()
-            # convert 12h to 24h for today
             h24, mm = to_24h(int(end_hour12), int(end_minute), str(end_ampm))
             end_dt = combine_today(h24, mm)
         else:
@@ -352,6 +361,25 @@ colA, _ = st.columns([1,3])
 with colA:
     if st.button("📜 Today’s History" + (" (hide)" if st.session_state.show_history else "")):
         st.session_state.show_history = not st.session_state.show_history
+
+def read_records_today_df():
+    recs = ws_records.get_all_records()
+    df = pd.DataFrame(recs, columns=RECORD_COLS) if recs else pd.DataFrame(columns=RECORD_COLS)
+    if df.empty:
+        return df
+    df["Group Size"] = pd.to_numeric(df["Group Size"], errors="coerce").fillna(1).astype(int)
+    df["Start Time (dt)"] = df["Start Time"].apply(parse_iso)
+    df["End Time (dt)"] = df["End Time"].apply(parse_iso)
+    today_str = date.today().isoformat()
+    df = df[df["Date"].astype(str) == today_str].copy()
+    # compute Total Elapsed if missing
+    def _compute(row):
+        if pd.notna(row["Start Time (dt)"]) and pd.notna(row["End Time (dt)"]):
+            secs = int((row["End Time (dt)"] - row["Start Time (dt)"]).total_seconds())
+            return fmt_hms(secs)
+        return row.get("Total Elapsed", "")
+    df["Total Elapsed"] = df.apply(_compute, axis=1)
+    return df
 
 if st.session_state.show_history:
     st.subheader(f"History — {date.today().isoformat()}")
