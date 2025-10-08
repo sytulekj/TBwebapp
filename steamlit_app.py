@@ -250,41 +250,61 @@ else:
     rows_html_str = "\n".join(rows_html)
 
     # Plain triple-quoted string (NOT an f-string) so JS braces don't need escaping
-    html = """
-    <div style="overflow:auto; border:1px solid #eee; border-radius:12px; padding:8px">
-      <table style="width:100%; border-collapse:collapse; font-family:system-ui, -apple-system, Segoe UI, Roboto; font-size:0.95rem;">
-        <thead>
-          <tr style="text-align:left; border-bottom:1px solid #ddd">
-            <th>Name</th>
-            <th style="text-align:center">Group Size</th>
-            <th style="text-align:center">Transport</th>
-            <th style="text-align:center">Start Time</th>
-            <th>Time Elapsed (live)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{ROWS}}
-        </tbody>
-      </table>
-    </div>
-    <script>
-      function pad(n){ return n < 10 ? ('0' + n) : n; }
-      function fmt(s){
-        var h = Math.floor(s/3600),
-            m = Math.floor((s%3600)/60),
-            x = s % 60;
-        return pad(h) + ':' + pad(m) + ':' + pad(x);
-      }
-      function tick(){
-        var now = Math.floor(Date.now()/1000);
-        document.querySelectorAll('.elapsed').forEach(function(td){
-          var start = parseInt(td.dataset.start || now);
-          td.textContent = fmt(Math.max(0, now - start));
-        });
-      }
-      tick();
-      setInterval(tick, 1000);
-    </script>
+html = """
+<style>
+  .golf-wrap{
+    overflow:auto; border:1px solid #333; border-radius:12px; padding:8px;
+    background:#111;   /* dark backdrop so white text is readable */
+  }
+  .golf-table{
+    width:100%; border-collapse:collapse;
+    font-family:system-ui, -apple-system, Segoe UI, Roboto; font-size:0.95rem;
+    color:#fff;    /* <-- make all text white */
+  }
+  .golf-table th, .golf-table td{
+    color:#fff;                     /* headers + cells white */
+    border-bottom:1px solid #333;   /* subtle separator */
+    padding:8px 6px;
+  }
+  .golf-table th{ text-align:left; }
+  .center { text-align:center; }
+</style>
+
+<div class="golf-wrap">
+  <table class="golf-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th class="center">Group Size</th>
+        <th class="center">Transport</th>
+        <th class="center">Start Time</th>
+        <th>Time Elapsed (live)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ROWS}}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function pad(n){ return n < 10 ? ('0' + n) : n; }
+  function fmt(s){
+    var h = Math.floor(s/3600),
+        m = Math.floor((s%3600)/60),
+        x = s % 60;
+    return pad(h) + ':' + pad(m) + ':' + pad(x);
+  }
+  function tick(){
+    var now = Math.floor(Date.now()/1000);
+    document.querySelectorAll('.elapsed').forEach(function(td){
+      var start = parseInt(td.dataset.start || now);
+      td.textContent = fmt(Math.max(0, now - start));
+    });
+  }
+  tick();
+  setInterval(tick, 1000);
+</script>
     """
 
     html = html.replace("{{ROWS}}", rows_html_str)
@@ -407,3 +427,4 @@ if st.session_state.show_history:
 # -----------------------------
 st.markdown("---")
 st.caption("Golf Tracker · Google Sheets (Active & Records) · No-flash timers · 12-hour Manual time (5-min steps)")
+
