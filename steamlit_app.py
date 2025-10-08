@@ -89,7 +89,7 @@ def read_active_df() -> pd.DataFrame:
     # Backfill Date for old rows (if needed)
     if recs and "Date" not in recs[0]:
         for r in recs:
-            st_dt = parse_iso(r.get("Start Time", "")) or datetime.now()
+            st_dt = parse_iso(r.get("Start Time", "")) or datetime.now(ZoneInfo("America/New_York"))
             r["Date"] = st_dt.date().isoformat()
     df = pd.DataFrame(recs, columns=ACTIVE_COLS) if recs else pd.DataFrame(columns=ACTIVE_COLS)
     if not df.empty:
@@ -135,7 +135,7 @@ def to_24h(hour12: int, minute: int, ampm: str) -> tuple[int, int]:
     return h, minute
 
 def default_12h_now():
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("America/New_York"))
     ampm = "PM" if now.hour >= 12 else "AM"
     hour12 = now.hour % 12
     if hour12 == 0:
@@ -208,7 +208,7 @@ start_now_clicked = b_now.button("▶️ Start Round (Now)")
 start_manual_clicked = b_manual.button("🕒 Start Round (Manual)")
 
 if start_now_clicked and name.strip():
-    start_dt = datetime.now()
+    start_dt = datetime.now(ZoneInfo("America/New_York"))
     append_active(name.strip(), int(group_size), transport, start_dt)
     st.success(f"Started {name} at {start_dt.strftime('%I:%M %p')} ({transport}).")
     st.rerun()
@@ -236,7 +236,7 @@ else:
     rows_html = []
     for _, r in df_active_display.iterrows():
         st_dt = r["Start Time (dt)"]
-        start_ts = int(st_dt.timestamp()) if isinstance(st_dt, datetime) else int(datetime.now().timestamp())
+        start_ts = int(st_dt.timestamp()) if isinstance(st_dt, datetime) else int(datetime.now(ZoneInfo("America/New_York")).timestamp())
         rows_html.append(f"""
           <tr>
             <td>{r['Name']}</td>
@@ -352,7 +352,7 @@ if not df_active_for_end.empty:
         date_str, name, group_size, transport, start_str = (
             row_vals[0], row_vals[1], row_vals[2], row_vals[3], row_vals[4]
         )
-        start_dt = parse_iso(start_str) or datetime.now()
+        start_dt = parse_iso(start_str) or datetime.now(ZoneInfo("America/New_York"))
 
         if end_manual_clicked:
             if mode_end != "Manual time":
@@ -361,7 +361,7 @@ if not df_active_for_end.empty:
             h24, mm = to_24h(int(end_hour12), int(end_minute), str(end_ampm))
             end_dt = combine_today(h24, mm)
         else:
-            end_dt = datetime.now()
+            end_dt = datetime.now(ZoneInfo("America/New_York"))
 
         append_record(date_str, name, int(group_size or 1), transport, start_dt, end_dt)
         delete_active_row(sheet_row)
@@ -409,3 +409,4 @@ if st.session_state.show_history:
 # -----------------------------
 st.markdown("---")
 st.caption("Golf Tracker · Google Sheets (Active & Records) · No-flash timers · 12-hour Manual time (5-min steps)")
+
