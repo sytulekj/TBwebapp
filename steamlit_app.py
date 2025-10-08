@@ -86,7 +86,7 @@ if active:
 
     # --- Auto-refresh every 10 seconds ---
     time.sleep(10)
-    st.experimental_rerun()
+    st.rerun()
 else:
     st.info("No golfers are currently on the course.")
 
@@ -103,4 +103,5 @@ else:
 
 # --- Footer ---
 st.markdown("---")
+
 st.caption("Golf Tracker App · Live Timer · Walking vs Cart · Auto-Refresh Enabled")
