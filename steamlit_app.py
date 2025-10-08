@@ -10,8 +10,10 @@ from google.oauth2.service_account import Credentials
 # -----------------------------
 st.set_page_config(page_title="Golf Tracker", layout="centered")
 
-# auto-refresh every 10 seconds without interrupting the rest of the script
-st.autorefresh(interval=10_000, key="live_refresh")
+from streamlit_autorefresh import st_autorefresh
+
+# refresh the page every 10 seconds without interrupting rendering
+st_autorefresh(interval=10_000, key="live_refresh")
 
 # Read creds & sheet URL from Streamlit secrets (Settings → Secrets)
 SERVICE_INFO = dict(st.secrets["gcp_service_account"])
@@ -295,3 +297,4 @@ if st.session_state.show_history:
 # -----------------------------
 st.markdown("---")
 st.caption("Golf Tracker · Google Sheets (Active & Records) · Date stored (hidden in Active UI) · Custom HH:MM (5-min) · Live timers")
+
