@@ -10,6 +10,9 @@ from google.oauth2.service_account import Credentials
 # -----------------------------
 st.set_page_config(page_title="Golf Tracker", layout="centered")
 
+# auto-refresh every 10 seconds without interrupting the rest of the script
+st.autorefresh(interval=10_000, key="live_refresh")
+
 # Read creds & sheet URL from Streamlit secrets (Settings → Secrets)
 SERVICE_INFO = dict(st.secrets["gcp_service_account"])
 # normalize private_key in case it was saved with \n escapes
@@ -206,9 +209,6 @@ if not df_active.empty:
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-    # auto-refresh ~10s for live timers
-    pytime.sleep(10)
-    st.rerun()
 else:
     st.info("No golfers are currently on the course.")
 
