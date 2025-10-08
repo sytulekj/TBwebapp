@@ -3,20 +3,18 @@ import pandas as pd
 from datetime import datetime, date, time as dtime
 import gspread
 from google.oauth2.service_account import Credentials
-from streamlit_autorefresh import st_autorefresh
+import streamlit.components.v1 as components  # for smooth client-side timer
 
 # =============================
-# App Config & Auto-Refresh
+# App Config
 # =============================
 st.set_page_config(page_title="Golf Tracker", layout="centered")
-# Refresh every 10s without interrupting the rest of the script
-st_autorefresh(interval=10_000, key="live_refresh")
 
 # =============================
 # Secrets / Google Sheets Setup
 # =============================
 SERVICE_INFO = dict(st.secrets["gcp_service_account"])
-# Normalize private_key if it's stored with literal \n
+# Normalize private_key if it was saved with literal \n
 if "private_key" in SERVICE_INFO:
     SERVICE_INFO["private_key"] = SERVICE_INFO["private_key"].replace("\\n", "\n")
 
@@ -25,14 +23,25 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapi
 
 creds = Credentials.from_service_account_info(SERVICE_INFO, scopes=SCOPES)
 client = gspread.authorize(creds)
-ss = client.open_by_url(SHEET_URL)
+
+# Prefer key extraction for reliability
+import re
+def extract_sheet_id(url: str):
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+    return m.group(1) if m else None
+
+sheet_id = extract_sheet_id(SHEET_URL)
+if not sheet_id:
+    st.error("Invalid Google Sheet URL in secrets. Expected: https://docs.google.com/spreadsheets/d/<ID>/edit")
+    st.stop()
+ss = client.open_by_key(sheet_id)
 
 # Columns (Date stored in sheets but not shown in Active UI)
 ACTIVE_COLS  = ["Date", "Name", "Group Size", "Transport", "Start Time"]
 RECORD_COLS  = ["Date", "Name", "Group Size", "Transport", "Start Time", "End Time", "Total Elapsed"]
 
 def col_range(cols: int) -> str:
-    # A..Z is plenty for our 5–7 columns
+    # A..Z is plenty for our columns
     return f"A1:{chr(64 + cols)}1"
 
 def get_or_create_ws(name: str, columns: list[str]):
@@ -117,10 +126,6 @@ def delete_active_row(sheet_row: int):
 def combine_today(hour: int, minute: int) -> datetime:
     today = date.today()
     return datetime(today.year, today.month, today.day, hour, minute, 0)
-
-def round_now_to_5min() -> tuple[int, int]:
-    now = datetime.now()
-    return now.hour, (now.minute // 5) * 5
 
 def to_24h(hour12: int, minute: int, ampm: str) -> tuple[int, int]:
     """Convert 12h time to 24h (local day)."""
@@ -219,33 +224,74 @@ if start_manual_clicked and name.strip():
         st.rerun()
 
 # -----------------------------
-# Current Golfers (live; Date hidden)
+# Current Golfers (no-flash live timers; Date hidden)
 # -----------------------------
 st.subheader("Current Golfers on Course")
-if not df_active.empty:
-    now = datetime.now()
-    rows = []
-    for _, r in df_active.iterrows():
-        st_dt = r["Start Time (dt)"]
-        elapsed = fmt_hms(int((now - st_dt).total_seconds())) if isinstance(st_dt, datetime) else ""
-        rows.append({
-            "Name": r["Name"],
-            "Group Size": r["Group Size"],
-            "Transport": r["Transport"],
-            "Start Time": st_dt.strftime("%I:%M %p") if isinstance(st_dt, datetime) else r["Start Time"],
-            "Time Elapsed (live)": elapsed
-        })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
-else:
+
+df_active_display = read_active_df()  # fresh read for display
+if df_active_display.empty:
     st.info("No golfers are currently on the course.")
+else:
+    # Build rows with data-start timestamps for smooth JS ticking
+    rows_html = []
+    for _, r in df_active_display.iterrows():
+        st_dt = r["Start Time (dt)"]
+        start_ts = int(st_dt.timestamp()) if isinstance(st_dt, datetime) else int(datetime.now().timestamp())
+        rows_html.append(f"""
+          <tr>
+            <td>{r['Name']}</td>
+            <td style="text-align:center">{r['Group Size']}</td>
+            <td style="text-align:center">{r['Transport']}</td>
+            <td style="text-align:center">{(st_dt.strftime('%I:%M %p') if isinstance(st_dt, datetime) else r['Start Time'])}</td>
+            <td class="elapsed" data-start="{start_ts}">--:--:--</td>
+          </tr>
+        """)
+
+    html = f"""
+    <div style="overflow:auto; border:1px solid #eee; border-radius:12px; padding:8px">
+      <table style="width:100%; border-collapse:collapse; font-family:system-ui, -apple-system, Segoe UI, Roboto; font-size:0.95rem;">
+        <thead>
+          <tr style="text-align:left; border-bottom:1px solid #ddd">
+            <th>Name</th>
+            <th style="text-align:center">Group Size</th>
+            <th style="text-align:center">Transport</th>
+            <th style="text-align:center">Start Time</th>
+            <th>Time Elapsed (live)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(rows_html)}
+        </tbody>
+      </table>
+    </div>
+    <script>
+      function pad(n){{return n<10?('0'+n):n}}
+      function fmt(s){{var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60;return pad(h)+':'+pad(m)+':'+pad(x)}}
+      function tick(){{
+        const now = Math.floor(Date.now()/1000);
+        document.querySelectorAll('.elapsed').forEach((td)=>{
+          const start = parseInt(td.dataset.start || now);
+          td.textContent = fmt(Math.max(0, now - start));
+        });
+      }}
+      tick();
+      setInterval(tick, 1000);
+    </script>
+    """
+    components.html(html, height=min(420, 140 + 40*len(rows_html)))
+
+    # Manual refresh to pull new rows from other devices (no full auto-rerun)
+    if st.button("🔃 Refresh data"):
+        st.rerun()
 
 # -----------------------------
 # End Round (Now or Manual)
 # -----------------------------
 st.subheader("End Round")
-if not df_active.empty:
+df_active_for_end = read_active_df()  # read again so it's current
+if not df_active_for_end.empty:
     options = []
-    for idx, r in df_active.iterrows():
+    for idx, r in df_active_for_end.iterrows():
         sheet_row = idx + 2  # header = row 1
         st_label = r["Start Time (dt)"].strftime("%I:%M %p") if isinstance(r["Start Time (dt)"], datetime) else r["Start Time"]
         label = f"{r['Name']} · {r['Transport']} · started {st_label} (row {sheet_row})"
@@ -281,8 +327,9 @@ if not df_active.empty:
             if mode_end != "Manual time":
                 st.warning("Choose ‘Manual time’ to set hour/minute first.")
                 st.stop()
-            eh24, emm = to_24h(int(end_hour12), int(end_minute), str(end_ampm))
-            end_dt = combine_today(eh24, emm)
+            # convert 12h to 24h for today
+            h24, mm = to_24h(int(end_hour12), int(end_minute), str(end_ampm))
+            end_dt = combine_today(h24, mm)
         else:
             end_dt = datetime.now()
 
@@ -298,6 +345,9 @@ else:
 # Today's History (button at bottom)
 # -----------------------------
 st.markdown("---")
+if "show_history" not in st.session_state:
+    st.session_state.show_history = False
+
 colA, _ = st.columns([1,3])
 with colA:
     if st.button("📜 Today’s History" + (" (hide)" if st.session_state.show_history else "")):
@@ -328,4 +378,4 @@ if st.session_state.show_history:
 # Footer
 # -----------------------------
 st.markdown("---")
-st.caption("Golf Tracker · Google Sheets (Active & Records) · Date stored (hidden in Active UI) · 12-hour Manual time (5-min steps) · Live timers")
+st.caption("Golf Tracker · Google Sheets (Active & Records) · No-flash timers · 12-hour Manual time (5-min steps)")
